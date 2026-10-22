@@ -289,9 +289,9 @@ fun RuleEditor(
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Solo en el primer mensaje de un contacto nuevo")
+                    Text("Solo si la app todavía no le respondió a este contacto")
                     Text(
-                        "No se usa si ya se le respondió algo a esa persona.",
+                        "La app no ve el historial de WhatsApp: un chat viejo cuenta como nuevo. Para excluir clientes conocidos usá «solo números no guardados».",
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
