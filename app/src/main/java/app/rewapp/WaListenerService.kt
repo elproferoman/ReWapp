@@ -10,9 +10,6 @@ import androidx.core.app.NotificationCompat
 class WaListenerService : NotificationListenerService() {
 
     companion object {
-        const val PKG_BUSINESS = "com.whatsapp.w4b"
-        const val PKG_NORMAL = "com.whatsapp"
-
         @Volatile
         var instance: WaListenerService? = null
     }
@@ -43,6 +40,18 @@ class WaListenerService : NotificationListenerService() {
         }
     }
 
+    override fun onNotificationRemoved(sbn: StatusBarNotification, rankingMap: RankingMap?, reason: Int) {
+        // Solo para diagnóstico: ayuda a entender cuándo WhatsApp cierra la notificación de un chat.
+        try {
+            val settings = Store.settings()
+            if (!settings.debug || !Keys.allowed(sbn.packageName, settings)) return
+            if (Replier.findReplyAction(sbn.notification) == null) return
+            val title = Keys.cleanTitle(sbn.notification.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty())
+            Store.log(LogEntry(System.currentTimeMillis(), title, "", "-", "Diag: notificación cerrada (motivo $reason) [${Keys.of(sbn)}]"))
+        } catch (_: Exception) {
+        }
+    }
+
     private fun debugLog(settings: Settings, contact: String, text: String, outcome: String) {
         if (settings.debug) Store.log(LogEntry(System.currentTimeMillis(), contact, text, "-", outcome))
     }
@@ -50,69 +59,84 @@ class WaListenerService : NotificationListenerService() {
     private fun handle(sbn: StatusBarNotification) {
         val settings = Store.settings()
         if (!settings.enabled) return
-        val pkg = sbn.packageName
-        if (pkg != PKG_BUSINESS && !(settings.includeWhatsApp && pkg == PKG_NORMAL)) return
+        if (!Keys.allowed(sbn.packageName, settings)) return
 
         val n = sbn.notification
         if (n.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
         val action = Replier.findReplyAction(n) ?: return
 
         val extras = n.extras
-        val contact = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim().orEmpty()
-        if (contact.isEmpty()) return
+        val rawTitle = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim().orEmpty()
+        val name = Keys.cleanTitle(rawTitle)
+        if (name.isEmpty()) return
+        val key = Keys.of(sbn)
 
         val style = NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(n)
         if (style != null) {
             val senders = style.messages.mapNotNull { it.person?.name?.toString() }.toSet()
             if (style.isGroupConversation || senders.size > 1) {
-                debugLog(settings, contact, "", "Ignorado: es un grupo")
+                debugLog(settings, name, "", "Ignorado: es un grupo [$key]")
                 return
             }
         }
 
         // Siempre guardamos la acción más reciente: sirve para insistir más tarde.
-        Replier.remember(contact, action)
+        Replier.remember(key, action)
 
-        val incoming: List<Incoming> = if (style != null && style.messages.isNotEmpty()) {
-            val userKey = style.user.key
-            val userName = style.user.name?.toString()
-            style.messages.filter { m ->
-                val p = m.person
-                val isMe = p != null &&
-                    ((userKey != null && p.key == userKey) ||
-                        (!userName.isNullOrEmpty() && p.name?.toString() == userName))
-                !isMe
-            }.mapNotNull { m -> m.text?.toString()?.let { Incoming(it, m.timestamp) } }
+        val incoming: List<Incoming>
+        val mine: List<String>
+        if (style != null && style.messages.isNotEmpty()) {
+            val (mineMsgs, theirs) = style.messages.partition { Keys.isMine(style, it) }
+            incoming = theirs.mapNotNull { m -> m.text?.toString()?.let { Incoming(it, m.timestamp) } }
+            mine = mineMsgs.mapNotNull { it.text?.toString() }
         } else {
-            listOfNotNull(extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()?.let { Incoming(it, sbn.postTime) })
+            incoming = listOfNotNull(extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()?.let { Incoming(it, sbn.postTime) })
+            mine = emptyList()
         }
 
-        val now = System.currentTimeMillis()
-        val state0 = Engine.freshState(Store.state(contact), contact, settings, now)
-        val last = incoming.filter { it.time > state0.lastProcessedMsgTime }.maxByOrNull { it.time } ?: return
+        // Leer, decidir y guardar el estado es una sola operación, para no pisarse con el worker.
+        Store.locked {
+            val now = System.currentTimeMillis()
+            val state0 = Engine.freshState(Store.state(key), key, settings, now).copy(name = name)
 
-        // Si es el eco de lo que mandamos nosotros, solo lo marcamos como visto.
-        if (Engine.normalize(last.text) in state0.lastSent) {
-            Store.putState(state0.copy(lastProcessedMsgTime = last.time))
-            debugLog(settings, contact, last.text, "Ignorado: eco de un mensaje enviado por la app")
-            return
+            // Si el dueño escribió algo que no mandó la app, la conversación sigue en manos humanas.
+            val ownerWrote = mine.any { !Engine.isSentByUs(it, state0.lastSent) }
+            if (ownerWrote && state0.followUpDueAt > 0) {
+                Store.putState(state0.withoutFollowUp())
+                Store.log(LogEntry(now, name, "", "-", "Insistencia cancelada: respondiste a mano"))
+                FollowUps.schedule(applicationContext)
+                return@locked
+            }
+
+            val last = incoming.filter { it.time > state0.lastProcessedMsgTime }.maxByOrNull { it.time }
+            if (last == null) {
+                Store.putState(state0)
+                return@locked
+            }
+
+            // Si es el eco de lo que mandamos nosotros, solo lo marcamos como visto.
+            if (Engine.isSentByUs(last.text, state0.lastSent)) {
+                Store.putState(state0.copy(lastProcessedMsgTime = last.time))
+                debugLog(settings, name, last.text, "Ignorado: eco de un mensaje enviado por la app")
+                return@locked
+            }
+            process(key, name, last, state0, settings, now)
         }
-        process(contact, last, state0, settings)
     }
 
-    private fun process(contact: String, msg: Incoming, state0: ContactState, settings: Settings) {
-        val now = System.currentTimeMillis()
+    private fun process(key: String, name: String, msg: Incoming, state0: ContactState, settings: Settings, now: Long) {
         // Cualquier mensaje de la persona cancela la insistencia pendiente.
         var st = state0.withoutFollowUp().copy(lastProcessedMsgTime = msg.time, lastActivityAt = now)
 
         val rule = Engine.pick(Store.rules(), st, msg.text)
         if (rule == null) {
             Store.putState(st)
-            Store.log(LogEntry(now, contact, msg.text, "-", "Sin regla que coincida"))
+            Store.log(LogEntry(now, name, msg.text, "-", "Sin regla que coincida" + if (settings.debug) " [$key]" else ""))
+            FollowUps.schedule(applicationContext)
             return
         }
 
-        val reply = Engine.fill(rule.reply, contact)
+        val reply = Engine.fill(rule.reply, name)
         st = st.copy(
             lastRuleId = rule.id,
             firedRuleIds = st.firedRuleIds + rule.id,
@@ -129,11 +153,12 @@ class WaListenerService : NotificationListenerService() {
 
         val ctx = applicationContext
         handler.postDelayed({
-            val ok = Replier.send(ctx, contact, reply)
+            val ok = Replier.send(ctx, key, reply)
             Store.log(
                 LogEntry(
-                    System.currentTimeMillis(), contact, msg.text, rule.name,
-                    if (ok) "Respondido" else "No se pudo responder (no hay respuesta rápida disponible)",
+                    System.currentTimeMillis(), name, msg.text, rule.name,
+                    (if (ok) "Respondido" else "No se pudo responder (no hay respuesta rápida disponible)") +
+                        if (settings.debug) " [$key]" else "",
                 ),
             )
         }, settings.replyDelaySec * 1000L)

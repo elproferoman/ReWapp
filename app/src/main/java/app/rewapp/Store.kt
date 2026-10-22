@@ -14,6 +14,10 @@ object Store {
     fun init(ctx: Context) {
         if (prefs == null) {
             prefs = ctx.applicationContext.getSharedPreferences("rewapp", Context.MODE_PRIVATE)
+            // v2: cambió la clave con la que se identifica a cada contacto; el historial viejo ya no sirve.
+            if (prefs!!.getInt("schema", 1) < 2) {
+                prefs!!.edit().remove("states").putInt("schema", 2).apply()
+            }
         }
     }
 
@@ -94,6 +98,14 @@ object Store {
     fun putState(s: ContactState) = locked {
         val map = readStates()
         map[s.key] = s
+        writeStates(map)
+    }
+
+    /** Lee, transforma y guarda el estado de un contacto en una sola operación. */
+    fun updateState(key: String, block: (ContactState?) -> ContactState?) = locked {
+        val map = readStates()
+        val next = block(map[key])
+        if (next == null) map.remove(key) else map[key] = next
         writeStates(map)
     }
 

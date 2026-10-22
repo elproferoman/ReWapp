@@ -27,6 +27,12 @@ object FollowUps {
         wm.enqueueUniqueWork(WORK_NAME, ExistingWorkPolicy.REPLACE, req)
     }
 
+    /** Cancela a mano la insistencia pendiente de un contacto. */
+    fun cancel(ctx: Context, key: String) {
+        Store.updateState(key) { it?.withoutFollowUp() }
+        schedule(ctx)
+    }
+
     fun runDue(ctx: Context) {
         val settings = Store.settings()
         val rules = Store.rules()
@@ -36,28 +42,38 @@ object FollowUps {
             // Se vuelve a leer por si la persona contestó mientras tanto.
             val st = Store.state(candidate.key) ?: continue
             if (st.followUpDueAt <= 0 || st.followUpDueAt > now) continue
+            val label = st.name.ifBlank { st.key }
 
             val rule = rules.find { it.id == st.followUpRuleId }
             if (!settings.enabled || rule == null || !rule.enabled || !rule.followUpEnabled) {
-                Store.putState(st.withoutFollowUp())
+                Store.updateState(st.key) { cur -> if (cur != null && cur.followUpDueAt == st.followUpDueAt) cur.withoutFollowUp() else cur }
                 continue
             }
 
-            val text = Engine.fill(rule.followUpMessage, st.key)
+            // Última comprobación: ¿la conversación siguió y no nos enteramos?
+            if (Replier.hasUnseenActivity(st.key, st.lastProcessedMsgTime, st.lastSent)) {
+                Store.updateState(st.key) { cur -> if (cur != null && cur.followUpDueAt == st.followUpDueAt) cur.withoutFollowUp() else cur }
+                Store.log(LogEntry(now, label, "", rule.name, "Insistencia cancelada: hay actividad nueva en el chat"))
+                continue
+            }
+
+            val text = Engine.fill(rule.followUpMessage, st.name)
             val ok = Replier.send(ctx, st.key, text)
             val attempts = st.followUpAttempts + 1
             val more = ok && attempts < rule.followUpMaxAttempts
-            Store.putState(
-                st.copy(
+            // Solo se guarda si nadie tocó el estado mientras tanto (por ejemplo, si la persona escribió).
+            Store.updateState(st.key) { cur ->
+                if (cur == null || cur.followUpDueAt != st.followUpDueAt) cur
+                else cur.copy(
                     followUpAttempts = attempts,
                     followUpDueAt = if (more) now + rule.followUpDelayMinutes * 60_000L else 0,
-                    followUpRuleId = if (more) st.followUpRuleId else null,
-                    lastSent = if (ok) (st.lastSent + Engine.normalize(text)).takeLast(6) else st.lastSent,
-                ),
-            )
+                    followUpRuleId = if (more) cur.followUpRuleId else null,
+                    lastSent = if (ok) (cur.lastSent + Engine.normalize(text)).takeLast(6) else cur.lastSent,
+                )
+            }
             Store.log(
                 LogEntry(
-                    now, st.key, "(sin respuesta)", rule.name,
+                    now, label, "(sin respuesta)", rule.name,
                     if (ok) "Insistencia $attempts/${rule.followUpMaxAttempts} enviada"
                     else "No se pudo insistir: la notificación del chat ya no está disponible",
                 ),

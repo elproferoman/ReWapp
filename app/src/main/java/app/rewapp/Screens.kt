@@ -376,6 +376,7 @@ fun RuleEditor(
 
 @Composable
 fun ActivityTab(modifier: Modifier, rev: Int, bump: () -> Unit) {
+    val ctx = LocalContext.current
     val logs = remember(rev) { Store.logs() }
     val pending = remember(rev) { Store.allStates().filter { it.followUpDueAt > 0 }.sortedBy { it.followUpDueAt } }
     val rules = remember(rev) { Store.rules() }
@@ -394,12 +395,26 @@ fun ActivityTab(modifier: Modifier, rev: Int, bump: () -> Unit) {
         if (pending.isEmpty()) item { Text("Ninguna.", style = MaterialTheme.typography.bodySmall) }
         items(pending, key = { "p_" + it.key }) { st ->
             val ruleName = rules.find { it.id == st.followUpRuleId }?.name ?: "-"
-            Text("• ${st.key} — ${dateFmt.format(Date(st.followUpDueAt))} ($ruleName)", style = MaterialTheme.typography.bodySmall)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "• ${st.name.ifBlank { st.key }} — ${dateFmt.format(Date(st.followUpDueAt))} ($ruleName)",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = { FollowUps.cancel(ctx, st.key); bump() }) { Text("Cancelar") }
+            }
         }
         item {
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Registro", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                TextButton(onClick = {
+                    val text = logs.joinToString("\n") { e ->
+                        "${dateFmt.format(Date(e.time))} | ${e.contact} | ${e.incoming.take(80)} | ${e.rule} | ${e.outcome}"
+                    }
+                    val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
+                    ctx.startActivity(Intent.createChooser(send, "Compartir registro").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                }) { Text("Compartir") }
                 TextButton(onClick = { Store.clearLog(); bump() }) { Text("Limpiar") }
             }
         }

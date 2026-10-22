@@ -63,6 +63,8 @@ data class Rule(
 /** Estado de la conversación con un contacto. */
 data class ContactState(
     val key: String,
+    /** Nombre para mostrar y para {nombre}. */
+    val name: String = "",
     val lastRuleId: String? = null,
     val firedRuleIds: Set<String> = emptySet(),
     val lastProcessedMsgTime: Long = 0,
@@ -78,6 +80,7 @@ data class ContactState(
 
     fun toJson(): JSONObject = JSONObject().apply {
         put("key", key)
+        put("name", name)
         put("lastRuleId", lastRuleId ?: JSONObject.NULL)
         put("fired", JSONArray(firedRuleIds.toList()))
         put("lastProcessedMsgTime", lastProcessedMsgTime)
@@ -96,6 +99,7 @@ data class ContactState(
             o.optJSONArray("lastSent")?.let { for (i in 0 until it.length()) sent += it.getString(i) }
             return ContactState(
                 key = o.getString("key"),
+                name = o.optString("name"),
                 lastRuleId = if (o.isNull("lastRuleId")) null else o.optString("lastRuleId"),
                 firedRuleIds = fired,
                 lastProcessedMsgTime = o.optLong("lastProcessedMsgTime"),

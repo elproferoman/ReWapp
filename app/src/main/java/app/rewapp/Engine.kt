@@ -15,6 +15,17 @@ object Engine {
         return noAccents.lowercase().replace(spaces, " ").trim().replace(edgePunct, "").trim()
     }
 
+    /**
+     * true si [text] parece un mensaje que mandó la app. Se compara con tolerancia (los primeros caracteres),
+     * porque WhatsApp puede recortar o reformatear el texto en la notificación.
+     */
+    fun isSentByUs(text: String, lastSent: List<String>): Boolean {
+        val n = normalize(text)
+        if (n.isEmpty()) return false
+        val head = n.take(30)
+        return lastSent.any { it == n || it.startsWith(head) || n.startsWith(it.take(30)) }
+    }
+
     fun triggers(rule: Rule): List<String> =
         rule.trigger.split("|", "\n").map { normalize(it) }.filter { it.isNotEmpty() }
 
