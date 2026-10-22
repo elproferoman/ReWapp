@@ -196,6 +196,8 @@ fun RuleEditor(
     var reply by remember { mutableStateOf(base.reply) }
     var afterId by remember { mutableStateOf(base.afterRuleId) }
     var once by remember { mutableStateOf(base.oncePerContact) }
+    var onlyNew by remember { mutableStateOf(base.onlyNewConversation) }
+    var onlyUnsaved by remember { mutableStateOf(base.onlyUnsaved) }
     var followUp by remember { mutableStateOf(base.followUpEnabled) }
     var followMsg by remember { mutableStateOf(base.followUpMessage) }
     var attemptsText by remember { mutableStateOf(base.followUpMaxAttempts.toString()) }
@@ -285,6 +287,26 @@ fun RuleEditor(
                 }
                 Switch(checked = once, onCheckedChange = { once = it })
             }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Solo en el primer mensaje de un contacto nuevo")
+                    Text(
+                        "No se usa si ya se le respondió algo a esa persona.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Switch(checked = onlyNew, onCheckedChange = { onlyNew = it })
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Solo para números que no tengo guardados")
+                    Text(
+                        "Si el contacto está en tu agenda (aparece con nombre), esta regla no responde.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Switch(checked = onlyUnsaved, onCheckedChange = { onlyUnsaved = it })
+            }
 
             HorizontalDivider()
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -341,6 +363,8 @@ fun RuleEditor(
                                 reply = reply,
                                 afterRuleId = afterId,
                                 oncePerContact = once,
+                                onlyNewConversation = onlyNew,
+                                onlyUnsaved = onlyUnsaved,
                                 followUpEnabled = followUp,
                                 followUpDelayMinutes = if (followUp) delayMin else base.followUpDelayMinutes,
                                 followUpMessage = followMsg,

@@ -32,7 +32,8 @@ object Engine {
     fun matches(rule: Rule, message: String): Boolean {
         val msg = normalize(message)
         val ts = triggers(rule)
-        if (ts.isEmpty()) return true
+        // Sin texto configurado = cualquier mensaje, pero no los vacíos (fotos, stickers sin texto).
+        if (ts.isEmpty()) return message.isNotBlank()
         return ts.any {
             when (rule.matchType) {
                 MatchType.CONTAINS -> msg.contains(it)
@@ -46,12 +47,15 @@ object Engine {
      * Primero se prueban las reglas "de seguimiento" (las que dependen de otra), que son más específicas,
      * y después las de inicio, en el orden de la lista.
      */
-    fun pick(rules: List<Rule>, state: ContactState, message: String): Rule? {
+    fun pick(rules: List<Rule>, state: ContactState, message: String, contactName: String): Rule? {
         val active = rules.filter { it.enabled }
         val ordered = active.filter { it.afterRuleId != null } + active.filter { it.afterRuleId == null }
+        val isNewContact = state.lastRuleId == null && state.firedRuleIds.isEmpty()
         for (r in ordered) {
             if (r.afterRuleId != null && state.lastRuleId != r.afterRuleId) continue
             if (r.oncePerContact && r.id in state.firedRuleIds) continue
+            if (r.onlyNewConversation && !isNewContact) continue
+            if (r.onlyUnsaved && !looksLikeNumber(contactName)) continue
             if (matches(r, message)) return r
         }
         return null
@@ -63,6 +67,18 @@ object Engine {
         val forgetMs = settings.forgetDays * 24L * 60 * 60 * 1000
         val expired = existing.lastActivityAt > 0 && now - existing.lastActivityAt > forgetMs
         return if (expired) ContactState(key = key) else existing
+    }
+
+    /** Un contacto no guardado aparece en la notificación como número (+54 9 11 ...). */
+    fun looksLikeNumber(contact: String): Boolean {
+        val c = contact.trim()
+        return c.isEmpty() || c.first() == '+' || c.first().isDigit()
+    }
+
+    /** Las reacciones llegan como un "mensaje" más ("Reaccionó con 👍 a ..."), pero no son una consulta. */
+    fun isReaction(text: String): Boolean {
+        val n = normalize(text)
+        return n.startsWith("reacciono con") || n.startsWith("reacted ")
     }
 
     fun firstName(contact: String): String {

@@ -22,6 +22,10 @@ data class Rule(
     /** Si no es null, la regla solo aplica cuando la última regla respondida a ese contacto fue esta. */
     val afterRuleId: String? = null,
     val oncePerContact: Boolean = true,
+    /** Solo aplica si es el primer contacto con esa persona (todavía no se le respondió nada). */
+    val onlyNewConversation: Boolean = false,
+    /** Solo aplica a números que no están guardados en la agenda (el título es un número). */
+    val onlyUnsaved: Boolean = false,
     val followUpEnabled: Boolean = false,
     val followUpDelayMinutes: Int = 60,
     val followUpMessage: String = "",
@@ -36,6 +40,8 @@ data class Rule(
         put("reply", reply)
         put("afterRuleId", afterRuleId ?: JSONObject.NULL)
         put("oncePerContact", oncePerContact)
+        put("onlyNewConversation", onlyNewConversation)
+        put("onlyUnsaved", onlyUnsaved)
         put("followUpEnabled", followUpEnabled)
         put("followUpDelayMinutes", followUpDelayMinutes)
         put("followUpMessage", followUpMessage)
@@ -52,6 +58,8 @@ data class Rule(
             reply = o.optString("reply"),
             afterRuleId = if (o.isNull("afterRuleId")) null else o.optString("afterRuleId").ifBlank { null },
             oncePerContact = o.optBoolean("oncePerContact", true),
+            onlyNewConversation = o.optBoolean("onlyNewConversation", false),
+            onlyUnsaved = o.optBoolean("onlyUnsaved", false),
             followUpEnabled = o.optBoolean("followUpEnabled", false),
             followUpDelayMinutes = o.optInt("followUpDelayMinutes", 60).coerceAtLeast(1),
             followUpMessage = o.optString("followUpMessage"),

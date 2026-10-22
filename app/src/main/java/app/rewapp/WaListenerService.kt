@@ -73,7 +73,16 @@ class WaListenerService : NotificationListenerService() {
 
         val style = NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(n)
         if (style != null) {
-            val senders = style.messages.mapNotNull { it.person?.name?.toString() }.toSet()
+            // Notificación que WhatsApp arma después de nuestra propia respuesta: el título pasa a ser "Tú".
+            val me = style.user.name?.toString()
+            if (name == me || name == "Tú" || name == "You") {
+                Replier.remember(key, action)
+                debugLog(settings, name, "", "Ignorado: notificación de un mensaje propio [$key]")
+                return
+            }
+            // Solo cuentan los remitentes que no somos nosotros (si no, "Tú" + contacto parecería un grupo).
+            val senders = style.messages.filter { !Keys.isMine(style, it) }
+                .mapNotNull { it.person?.name?.toString() }.toSet()
             if (style.isGroupConversation || senders.size > 1) {
                 debugLog(settings, name, "", "Ignorado: es un grupo [$key]")
                 return
@@ -128,7 +137,15 @@ class WaListenerService : NotificationListenerService() {
         // Cualquier mensaje de la persona cancela la insistencia pendiente.
         var st = state0.withoutFollowUp().copy(lastProcessedMsgTime = msg.time, lastActivityAt = now)
 
-        val rule = Engine.pick(Store.rules(), st, msg.text)
+        // Una reacción (👍, ❤️...) es señal de que la persona está activa, pero no dispara reglas.
+        if (Engine.isReaction(msg.text)) {
+            Store.putState(st)
+            Store.log(LogEntry(now, name, msg.text, "-", "Ignorado: es una reacción"))
+            FollowUps.schedule(applicationContext)
+            return
+        }
+
+        val rule = Engine.pick(Store.rules(), st, msg.text, name)
         if (rule == null) {
             Store.putState(st)
             Store.log(LogEntry(now, name, msg.text, "-", "Sin regla que coincida" + if (settings.debug) " [$key]" else ""))
