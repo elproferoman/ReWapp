@@ -145,6 +145,9 @@ class WaListenerService : NotificationListenerService() {
             return
         }
 
+        // Estadística: este contacto escribió hoy (cuenta una sola vez por día).
+        Store.recordContact(java.time.LocalDate.now().toString(), key)
+
         val rule = Engine.pick(Store.rules(), st, msg.text, name)
         if (rule == null) {
             Store.putState(st)

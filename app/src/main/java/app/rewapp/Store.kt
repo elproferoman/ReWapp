@@ -111,6 +111,41 @@ object Store {
 
     fun clearStates() = locked { p().edit().remove("states").apply() }
 
+    // ---- Contactos por día (estadísticas) ----
+    /** Anota que [key] escribió el día [day] (formato AAAA-MM-DD). Cada contacto cuenta una vez por día. */
+    fun recordContact(day: String, key: String) = locked {
+        val raw = p().getString("daily", null)
+        val o = if (raw != null) runCatching { JSONObject(raw) }.getOrDefault(JSONObject()) else JSONObject()
+        val arr = o.optJSONArray(day) ?: JSONArray().also { o.put(day, it) }
+        var found = false
+        for (i in 0 until arr.length()) if (arr.getString(i) == key) { found = true; break }
+        if (!found) arr.put(key)
+
+        // Se guardan unos 13 meses.
+        val cutoff = java.time.LocalDate.now().minusDays(400).toString()
+        val old = mutableListOf<String>()
+        val it = o.keys()
+        while (it.hasNext()) { val k = it.next(); if (k < cutoff) old += k }
+        old.forEach { o.remove(it) }
+        p().edit().putString("daily", o.toString()).apply()
+    }
+
+    /** Día (AAAA-MM-DD) -> contactos distintos que escribieron ese día. */
+    fun dailyContacts(): Map<String, Set<String>> = locked {
+        val raw = p().getString("daily", null) ?: return@locked emptyMap()
+        runCatching {
+            val o = JSONObject(raw)
+            val result = mutableMapOf<String, Set<String>>()
+            val it = o.keys()
+            while (it.hasNext()) {
+                val day = it.next()
+                val arr = o.getJSONArray(day)
+                result[day] = (0 until arr.length()).map { i -> arr.getString(i) }.toSet()
+            }
+            result
+        }.getOrDefault(emptyMap())
+    }
+
     // ---- Registro de actividad ----
     fun log(e: LogEntry) = locked {
         val current = logs().toMutableList()

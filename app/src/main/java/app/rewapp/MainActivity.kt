@@ -103,7 +103,8 @@ fun App(tick: Int) {
             NavigationBar {
                 NavigationBarItem(selected = tab == 0, onClick = { tab = 0 }, icon = { Text("💬") }, label = { Text("Reglas") })
                 NavigationBarItem(selected = tab == 1, onClick = { tab = 1 }, icon = { Text("📋") }, label = { Text("Actividad") })
-                NavigationBarItem(selected = tab == 2, onClick = { tab = 2 }, icon = { Text("⚙️") }, label = { Text("Ajustes") })
+                NavigationBarItem(selected = tab == 2, onClick = { tab = 2 }, icon = { Text("📊") }, label = { Text("Datos") })
+                NavigationBarItem(selected = tab == 3, onClick = { tab = 3 }, icon = { Text("⚙️") }, label = { Text("Ajustes") })
             }
         },
     ) { padding ->
@@ -113,6 +114,7 @@ fun App(tick: Int) {
                 if (r == null) creating = true else editing = r
             })
             1 -> ActivityTab(mod, rev, bump)
+            2 -> StatsTab(mod, rev)
             else -> SettingsTab(mod, rev, bump)
         }
     }
