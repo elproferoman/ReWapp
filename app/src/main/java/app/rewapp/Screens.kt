@@ -248,29 +248,30 @@ fun RuleEditor(
                 supportingText = { Text("Varias opciones separadas por | . Vacío = cualquier mensaje. No distingue mayúsculas ni tildes.") },
             )
 
-            Text("Solo si el contacto…", style = MaterialTheme.typography.titleSmall)
+            Text("¿Cuándo se aplica?", style = MaterialTheme.typography.titleSmall)
             Box {
                 OutlinedButton(onClick = { afterMenu = true }, modifier = Modifier.fillMaxWidth()) {
                     Text(
-                        if (afterId == null) "Escribe por primera vez / mensaje inicial"
-                        else "Viene de: " + (allRules.find { it.id == afterId }?.name ?: "(regla borrada)"),
+                        if (afterId == null) "Siempre (sin importar lo que se haya hablado antes)"
+                        else "Solo si viene de: " + (allRules.find { it.id == afterId }?.name ?: "(regla borrada)"),
                     )
                 }
                 DropdownMenu(expanded = afterMenu, onDismissRequest = { afterMenu = false }) {
                     DropdownMenuItem(
-                        text = { Text("Escribe por primera vez / mensaje inicial") },
+                        text = { Text("Siempre (sin importar lo que se haya hablado antes)") },
                         onClick = { afterId = null; afterMenu = false },
                     )
                     others.forEach { o ->
                         DropdownMenuItem(
-                            text = { Text("Viene de: ${o.name.ifBlank { "(sin nombre)" }}") },
+                            text = { Text("Solo si viene de: ${o.name.ifBlank { "(sin nombre)" }}") },
                             onClick = { afterId = o.id; afterMenu = false },
                         )
                     }
                 }
             }
             Text(
-                "Para un segundo paso, elegí la regla anterior: esta solo se activa si ya le respondiste con esa.",
+                "«Siempre» sirve cuando tuviste que responder a mano y la app no registró el paso anterior. " +
+                    "«Solo si viene de…» es para un segundo paso: se activa únicamente si la app ya le respondió con esa regla.",
                 style = MaterialTheme.typography.bodySmall,
             )
 

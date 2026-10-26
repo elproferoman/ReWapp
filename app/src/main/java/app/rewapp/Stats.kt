@@ -40,15 +40,10 @@ fun StatsTab(modifier: Modifier, rev: Int) {
 
     val daysInMonth = month.lengthOfMonth()
     val counts = (1..daysInMonth).map { d -> data[month.atDay(d).toString()]?.size ?: 0 }
-    val today = LocalDate.now()
-    val current = YearMonth.from(today)
-    val daysElapsed = when {
-        month.isBefore(current) -> daysInMonth
-        month == current -> today.dayOfMonth
-        else -> 0
-    }
-    val sum = counts.take(daysElapsed).sum()
-    val average = if (daysElapsed > 0) sum.toDouble() / daysElapsed else 0.0
+    val current = YearMonth.from(LocalDate.now())
+    // El promedio se calcula solo sobre los días en que hubo mensajes.
+    val activeDays = counts.count { it > 0 }
+    val average = if (activeDays > 0) counts.sum().toDouble() / activeDays else 0.0
     val distinctInMonth = (1..daysInMonth).flatMap { d -> data[month.atDay(d).toString()] ?: emptySet() }.toSet().size
     val maxCount = (counts.maxOrNull() ?: 0).coerceAtLeast(1)
     val monthName = month.month.getDisplayName(TextStyle.FULL, Locale.getDefault())
@@ -68,7 +63,7 @@ fun StatsTab(modifier: Modifier, rev: Int) {
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            StatCard("Promedio diario", String.format(Locale.getDefault(), "%.1f", average), Modifier.weight(1f))
+            StatCard("Promedio por día con mensajes ($activeDays días)", String.format(Locale.getDefault(), "%.1f", average), Modifier.weight(1f))
             StatCard("Contactos distintos del mes", distinctInMonth.toString(), Modifier.weight(1f))
         }
 
@@ -97,8 +92,8 @@ fun StatsTab(modifier: Modifier, rev: Int) {
         }
 
         Text(
-            "El promedio divide la suma de los contactos de cada día por los días transcurridos" +
-                (if (month == current) " (incluye hoy). " else ". ") +
+            "El promedio divide la suma de los contactos de cada día por la cantidad de días en que hubo mensajes; " +
+                "los días sin mensajes no se cuentan. " +
                 "Un contacto que escribe en dos días distintos cuenta en ambos días, pero una sola vez en «Contactos distintos del mes». " +
                 "Solo se cuentan mensajes que la app llegó a ver con el respondedor activo.",
             style = MaterialTheme.typography.bodySmall,
