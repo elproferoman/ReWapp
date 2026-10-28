@@ -57,16 +57,24 @@ object FollowUps {
                 continue
             }
 
-            val text = Engine.fill(rule.followUpMessage, st.name)
+            // followUpAttempts = cuántas insistencias ya se mandaron; la que toca ahora es la siguiente de la lista.
+            val steps = rule.activeFollowUps
+            val current = steps.getOrNull(st.followUpAttempts)
+            if (current == null) {
+                Store.updateState(st.key) { cur -> if (cur != null && cur.followUpDueAt == st.followUpDueAt) cur.withoutFollowUp() else cur }
+                continue
+            }
+            val text = Engine.fill(current.message, st.name)
             val ok = Replier.send(ctx, st.key, text)
             val attempts = st.followUpAttempts + 1
-            val more = ok && attempts < rule.followUpMaxAttempts
+            val next = steps.getOrNull(attempts)
+            val more = ok && next != null
             // Solo se guarda si nadie tocó el estado mientras tanto (por ejemplo, si la persona escribió).
             Store.updateState(st.key) { cur ->
                 if (cur == null || cur.followUpDueAt != st.followUpDueAt) cur
                 else cur.copy(
                     followUpAttempts = attempts,
-                    followUpDueAt = if (more) now + rule.followUpDelayMinutes * 60_000L else 0,
+                    followUpDueAt = if (more && next != null) now + next.delayMinutes * 60_000L else 0,
                     followUpRuleId = if (more) cur.followUpRuleId else null,
                     lastSent = if (ok) (cur.lastSent + Engine.normalize(text)).takeLast(6) else cur.lastSent,
                 )
@@ -74,7 +82,7 @@ object FollowUps {
             Store.log(
                 LogEntry(
                     now, label, "(sin respuesta)", rule.name,
-                    if (ok) "Insistencia $attempts/${rule.followUpMaxAttempts} enviada"
+                    if (ok) "Insistencia $attempts/${steps.size} enviada"
                     else "No se pudo insistir: la notificación del chat ya no está disponible",
                 ),
             )

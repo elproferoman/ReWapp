@@ -49,6 +49,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -151,8 +152,10 @@ fun RulesTab(modifier: Modifier, rev: Int, tick: Int, bump: () -> Unit, onEdit: 
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             if (r.followUpEnabled) {
+                                val steps = r.activeFollowUps
                                 Text(
-                                    "⏰ Insiste a los ${formatDelay(r.followUpDelayMinutes)} (hasta ${r.followUpMaxAttempts} ${if (r.followUpMaxAttempts == 1) "vez" else "veces"})",
+                                    "⏰ Insiste ${steps.size} ${if (steps.size == 1) "vez" else "veces"}: " +
+                                        steps.joinToString(" → ") { formatDelay(it.delayMinutes) },
                                     style = MaterialTheme.typography.bodySmall,
                                 )
                             }
@@ -198,14 +201,30 @@ fun RuleEditor(
     var once by remember { mutableStateOf(base.oncePerContact) }
     var onlyNew by remember { mutableStateOf(base.onlyNewConversation) }
     var onlyUnsaved by remember { mutableStateOf(base.onlyUnsaved) }
-    var followUp by remember { mutableStateOf(base.followUpEnabled) }
-    var followMsg by remember { mutableStateOf(base.followUpMessage) }
-    var attemptsText by remember { mutableStateOf(base.followUpMaxAttempts.toString()) }
+    var followUp by remember { mutableStateOf(base.followUps.isNotEmpty()) }
+    var followCount by remember { mutableStateOf(base.followUps.size.coerceIn(1, 5)) }
 
-    // El plazo se muestra en la unidad que mejor lo representa.
-    val m = base.followUpDelayMinutes
-    var unit by remember { mutableStateOf(if (m % 1440 == 0) 1440 else if (m % 60 == 0) 60 else 1) }
-    var delayText by remember { mutableStateOf((m / unit).toString()) }
+    // Siempre hay 5 "casilleros" de insistencia; se muestran los primeros [followCount].
+    // El plazo se muestra en la unidad que mejor lo representa (min / horas / días).
+    val units = remember {
+        mutableStateListOf<Int>().apply {
+            repeat(5) { i ->
+                val m = base.followUps.getOrNull(i)?.delayMinutes ?: 60
+                add(if (m % 1440 == 0) 1440 else if (m % 60 == 0) 60 else 1)
+            }
+        }
+    }
+    val delayTexts = remember {
+        mutableStateListOf<String>().apply {
+            repeat(5) { i ->
+                val m = base.followUps.getOrNull(i)?.delayMinutes ?: 60
+                add((m / units[i]).toString())
+            }
+        }
+    }
+    val followMsgs = remember {
+        mutableStateListOf<String>().apply { repeat(5) { i -> add(base.followUps.getOrNull(i)?.message ?: "") } }
+    }
 
     var afterMenu by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -321,29 +340,38 @@ fun RuleEditor(
                 Switch(checked = followUp, onCheckedChange = { followUp = it })
             }
             if (followUp) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = delayText,
-                        onValueChange = { v -> if (v.all { it.isDigit() } && v.length <= 4) delayText = v },
-                        label = { Text("Esperar") }, singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.width(110.dp),
-                    )
-                    FilterChip(selected = unit == 1, onClick = { unit = 1 }, label = { Text("min") })
-                    FilterChip(selected = unit == 60, onClick = { unit = 60 }, label = { Text("horas") })
-                    FilterChip(selected = unit == 1440, onClick = { unit = 1440 }, label = { Text("días") })
+                Text("Cantidad de insistencias", style = MaterialTheme.typography.bodyMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    (1..5).forEach { n ->
+                        FilterChip(selected = followCount == n, onClick = { followCount = n }, label = { Text(n.toString()) })
+                    }
                 }
-                OutlinedTextField(
-                    value = followMsg, onValueChange = { followMsg = it },
-                    label = { Text("Mensaje para insistir") }, modifier = Modifier.fillMaxWidth(), minLines = 3,
-                )
-                OutlinedTextField(
-                    value = attemptsText,
-                    onValueChange = { v -> if (v.all { it.isDigit() } && v.length <= 1) attemptsText = v },
-                    label = { Text("Cantidad máxima de insistencias (1 a 5)") }, singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                for (i in 0 until followCount) {
+                    HorizontalDivider()
+                    Text("Insistencia ${i + 1}", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        if (i == 0) "Se manda si la persona no escribe nada después de la respuesta de esta regla."
+                        else "Se manda si la persona sigue sin escribir después de la insistencia $i.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = delayTexts[i],
+                            onValueChange = { v -> if (v.all { it.isDigit() } && v.length <= 4) delayTexts[i] = v },
+                            label = { Text("Esperar") }, singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.width(110.dp),
+                        )
+                        FilterChip(selected = units[i] == 1, onClick = { units[i] = 1 }, label = { Text("min") })
+                        FilterChip(selected = units[i] == 60, onClick = { units[i] = 60 }, label = { Text("horas") })
+                        FilterChip(selected = units[i] == 1440, onClick = { units[i] = 1440 }, label = { Text("días") })
+                    }
+                    OutlinedTextField(
+                        value = followMsgs[i], onValueChange = { followMsgs[i] = it },
+                        label = { Text("Mensaje de la insistencia ${i + 1}") },
+                        modifier = Modifier.fillMaxWidth(), minLines = 3,
+                    )
+                }
             }
 
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
@@ -351,11 +379,16 @@ fun RuleEditor(
             Button(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = {
-                    val delayMin = (delayText.toIntOrNull() ?: 0) * unit
+                    val steps = (0 until followCount).map { i ->
+                        FollowUp((delayTexts[i].toIntOrNull() ?: 0) * units[i], followMsgs[i])
+                    }
+                    val badStep = steps.indexOfFirst { it.message.isBlank() || it.delayMinutes < 1 }
                     when {
                         reply.isBlank() -> error = "Falta el mensaje de respuesta."
-                        followUp && followMsg.isBlank() -> error = "Falta el mensaje para insistir."
-                        followUp && delayMin < 1 -> error = "El tiempo de espera tiene que ser al menos 1 minuto."
+                        followUp && badStep >= 0 && steps[badStep].message.isBlank() ->
+                            error = "Falta el mensaje de la insistencia ${badStep + 1}."
+                        followUp && badStep >= 0 ->
+                            error = "El tiempo de espera de la insistencia ${badStep + 1} tiene que ser al menos 1 minuto."
                         else -> onSave(
                             base.copy(
                                 name = name.ifBlank { reply.take(30) },
@@ -366,10 +399,7 @@ fun RuleEditor(
                                 oncePerContact = once,
                                 onlyNewConversation = onlyNew,
                                 onlyUnsaved = onlyUnsaved,
-                                followUpEnabled = followUp,
-                                followUpDelayMinutes = if (followUp) delayMin else base.followUpDelayMinutes,
-                                followUpMessage = followMsg,
-                                followUpMaxAttempts = (attemptsText.toIntOrNull() ?: 1).coerceIn(1, 5),
+                                followUps = if (followUp) steps else emptyList(),
                             ),
                         )
                     }

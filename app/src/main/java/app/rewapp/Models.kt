@@ -10,6 +10,12 @@ enum class MatchType(val label: String) {
     STARTS_WITH("Empieza con"),
 }
 
+/** Una insistencia: mensaje a enviar y cuánto esperar (desde el mensaje anterior) antes de mandarlo. */
+data class FollowUp(
+    val delayMinutes: Int = 60,
+    val message: String = "",
+)
+
 /** Una regla: si llega un mensaje que coincide con [trigger], se responde [reply]. */
 data class Rule(
     val id: String = UUID.randomUUID().toString(),
@@ -26,11 +32,13 @@ data class Rule(
     val onlyNewConversation: Boolean = false,
     /** Solo aplica a números que no están guardados en la agenda (el título es un número). */
     val onlyUnsaved: Boolean = false,
-    val followUpEnabled: Boolean = false,
-    val followUpDelayMinutes: Int = 60,
-    val followUpMessage: String = "",
-    val followUpMaxAttempts: Int = 1,
+    /** Insistencias en orden (hasta 5). Cada una espera su propio tiempo desde el mensaje anterior. */
+    val followUps: List<FollowUp> = emptyList(),
 ) {
+    /** Solo las insistencias con texto (una sin mensaje no se manda). */
+    val activeFollowUps: List<FollowUp> get() = followUps.filter { it.message.isNotBlank() }
+    val followUpEnabled: Boolean get() = activeFollowUps.isNotEmpty()
+
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id)
         put("name", name)
@@ -42,10 +50,9 @@ data class Rule(
         put("oncePerContact", oncePerContact)
         put("onlyNewConversation", onlyNewConversation)
         put("onlyUnsaved", onlyUnsaved)
-        put("followUpEnabled", followUpEnabled)
-        put("followUpDelayMinutes", followUpDelayMinutes)
-        put("followUpMessage", followUpMessage)
-        put("followUpMaxAttempts", followUpMaxAttempts)
+        val arr = JSONArray()
+        followUps.forEach { arr.put(JSONObject().put("delayMinutes", it.delayMinutes).put("message", it.message)) }
+        put("followUps", arr)
     }
 
     companion object {
@@ -60,11 +67,23 @@ data class Rule(
             oncePerContact = o.optBoolean("oncePerContact", true),
             onlyNewConversation = o.optBoolean("onlyNewConversation", false),
             onlyUnsaved = o.optBoolean("onlyUnsaved", false),
-            followUpEnabled = o.optBoolean("followUpEnabled", false),
-            followUpDelayMinutes = o.optInt("followUpDelayMinutes", 60).coerceAtLeast(1),
-            followUpMessage = o.optString("followUpMessage"),
-            followUpMaxAttempts = o.optInt("followUpMaxAttempts", 1).coerceIn(1, 5),
+            followUps = parseFollowUps(o),
         )
+
+        /** Lee la lista nueva; si la regla es de una versión anterior, convierte la insistencia única. */
+        private fun parseFollowUps(o: JSONObject): List<FollowUp> {
+            val arr = o.optJSONArray("followUps")
+            if (arr != null) {
+                return (0 until arr.length()).map { arr.getJSONObject(it) }
+                    .map { FollowUp(it.optInt("delayMinutes", 60).coerceAtLeast(1), it.optString("message")) }
+                    .take(5)
+            }
+            val oldMessage = o.optString("followUpMessage")
+            if (!o.optBoolean("followUpEnabled", false) || oldMessage.isBlank()) return emptyList()
+            val delay = o.optInt("followUpDelayMinutes", 60).coerceAtLeast(1)
+            val times = o.optInt("followUpMaxAttempts", 1).coerceIn(1, 5)
+            return List(times) { FollowUp(delay, oldMessage) }
+        }
     }
 }
 

@@ -183,9 +183,9 @@ object Seed {
                 "1️⃣ Agendar mi turno\n" +
                 "2️⃣ Precio y qué incluye\n" +
                 "3️⃣ Dirección y horarios",
-            followUpEnabled = true,
-            followUpDelayMinutes = 60,
-            followUpMessage = "¡Hola {nombre}! ¿Pudiste ver las opciones? Respondé 1, 2 o 3 y te ayudo enseguida 🙂",
+            followUps = listOf(
+                FollowUp(60, "¡Hola {nombre}! ¿Pudiste ver las opciones? Respondé 1, 2 o 3 y te ayudo enseguida 🙂"),
+            ),
         ),
         Rule(
             id = OPT1,
@@ -194,9 +194,9 @@ object Seed {
             trigger = "1",
             afterRuleId = START,
             reply = "Perfecto 🙌 Para agendar tu turno decime qué día y en qué horario te queda mejor.",
-            followUpEnabled = true,
-            followUpDelayMinutes = 120,
-            followUpMessage = "¿Seguís interesado en tu turno? Decime día y horario y te lo reservo 😊",
+            followUps = listOf(
+                FollowUp(120, "¿Seguís interesado en tu turno? Decime día y horario y te lo reservo 😊"),
+            ),
         ),
         Rule(
             id = OPT2,

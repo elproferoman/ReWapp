@@ -162,9 +162,10 @@ class WaListenerService : NotificationListenerService() {
             firedRuleIds = st.firedRuleIds + rule.id,
             lastSent = (st.lastSent + Engine.normalize(reply)).takeLast(6),
         )
-        if (rule.followUpEnabled && rule.followUpMessage.isNotBlank()) {
+        val firstFollowUp = rule.activeFollowUps.firstOrNull()
+        if (firstFollowUp != null) {
             st = st.copy(
-                followUpDueAt = now + settings.replyDelaySec * 1000L + rule.followUpDelayMinutes * 60_000L,
+                followUpDueAt = now + settings.replyDelaySec * 1000L + firstFollowUp.delayMinutes * 60_000L,
                 followUpRuleId = rule.id,
                 followUpAttempts = 0,
             )
