@@ -58,12 +58,24 @@ class WaListenerService : NotificationListenerService() {
 
     private fun handle(sbn: StatusBarNotification) {
         val settings = Store.settings()
-        if (!settings.enabled) return
-        if (!Keys.allowed(sbn.packageName, settings)) return
+        val isWa = sbn.packageName.startsWith("com.whatsapp")
+        if (!settings.enabled) {
+            if (isWa) debugLog(settings, "-", "", "Diag: ignorado, el interruptor general está apagado [${sbn.packageName}]")
+            return
+        }
+        if (!Keys.allowed(sbn.packageName, settings)) {
+            if (isWa) debugLog(settings, "-", "", "Diag: ignorado, paquete no monitoreado [${sbn.packageName}] (activá WhatsApp común en Ajustes si es el tuyo)")
+            return
+        }
 
         val n = sbn.notification
         if (n.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
-        val action = Replier.findReplyAction(n) ?: return
+        val action = Replier.findReplyAction(n)
+        if (action == null) {
+            val t = n.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
+            debugLog(settings, Keys.cleanTitle(t), "", "Diag: ignorado, la notificación no tiene botón de respuesta [${sbn.packageName}]")
+            return
+        }
 
         val extras = n.extras
         val rawTitle = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim().orEmpty()
